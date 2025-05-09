@@ -48,36 +48,60 @@ router.get('/', authenticate, async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
-
-// Accept a request
-
-// Accept a request
-router.put('/:id/accept', authenticate, async (req, res) => {
-    try {
-      const request = await Request.findById(req.params.id).populate('item');
-      if (!request) return res.status(404).json({ message: 'Request not found' });
-      if (request.owner.toString() !== req.user.id) {
-        return res.status(403).json({ message: 'Not authorized' });
-      }
-      if (request.status !== 'Pending') {
-        return res.status(400).json({ message: 'Request is not pending' });
-      }
-  
-      request.status = 'Accepted';
-      request.item.status = 'Borrowed';
-      await request.save();
-      await request.item.save();
-  
-      res.json({
-        message: 'Request accepted',
-        request,
-        item: { _id: request.item._id, status: 'Borrowed' },
-      });
-    } catch (err) {
-      console.error(err); // Log errors for debugging
-      res.status(500).json({ message: 'Server error' });
+router.put('/:id/return', authenticate, async (req, res) => {
+  try {
+    const request = await Request.findById(req.params.id).populate('item');
+    if (!request) return res.status(404).json({ message: 'Request not found' });
+    if (request.requester.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized' });
     }
-  });
+    if (request.status !== 'Accepted') {
+      return res.status(400).json({ message: 'Item is not currently borrowed' });
+    }
+
+    request.status = 'Completed';
+    request.item.status = 'Available';
+    await request.save();
+    await request.item.save();
+
+    res.json({
+      message: 'Item returned',
+      request,
+      item: { _id: request.item._id, status: 'Available' },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+// accept
+router.put('/:id/accept', authenticate, async (req, res) => {
+  try {
+    const request = await Request.findById(req.params.id).populate('item');
+    if (!request) return res.status(404).json({ message: 'Request not found' });
+    if (request.owner.toString() !== req.user.id) {
+      return res.status(403).json({ message: 'Not authorized' });
+    }
+    if (request.status !== 'Pending') {
+      return res.status(400).json({ message: 'Request is not pending' });
+    }
+
+    request.status = 'Accepted';
+    request.rentalStartTime = new Date(); // Set rental start time
+    request.item.status = 'Borrowed';
+    await request.save();
+    await request.item.save();
+
+    res.json({
+      message: 'Request accepted',
+      request,
+      item: { _id: request.item._id, status: 'Borrowed' },
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 // Decline a request
 router.put('/:id/decline', authenticate, async (req, res) => {
   try {

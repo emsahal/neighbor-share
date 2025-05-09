@@ -20,6 +20,7 @@ function Dashboard() {
   const [success, setSuccess] = useState('');
   const [showAddItemForm, setShowAddItemForm] = useState(false);
   const [activeTab, setActiveTab] = useState('my-items');
+  const [timers, setTimers] = useState({}); // Store countdown timers for each request
 
   useEffect(() => {
     if (user) {
@@ -34,6 +35,41 @@ function Dashboard() {
         .catch((err) => setError('Failed to load requests'));
     }
   }, [user]);
+
+  // Timer logic
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTimers((prevTimers) => {
+        const newTimers = { ...prevTimers };
+        requests.forEach((request) => {
+          if (
+            request.status === 'Accepted' &&
+            request.requester?._id === user?._id &&
+            request.rentalStartTime
+          ) {
+            const startTime = new Date(request.rentalStartTime).getTime();
+            const maxDuration = 59 * 3600 * 1000 + 59 * 60 * 1000 + 59 * 1000; // 59:59:59 in ms
+            const elapsed = Date.now() - startTime;
+            const remaining = Math.max(0, maxDuration - elapsed);
+
+            if (remaining > 0) {
+              const hours = Math.floor(remaining / (1000 * 3600));
+              const minutes = Math.floor((remaining % (1000 * 3600)) / (1000 * 60));
+              const seconds = Math.floor((remaining % (1000 * 60)) / 1000);
+              newTimers[request._id] = `${hours.toString().padStart(2, '0')}:${minutes
+                .toString()
+                .padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            } else {
+              newTimers[request._id] = '00:00:00';
+            }
+          }
+        });
+        return newTimers;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval); // Cleanup on unmount
+  }, [requests, user]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -103,7 +139,7 @@ function Dashboard() {
       const res = await api.put(`/requests/${requestId}/accept`);
       setRequests(
         requests.map((req) =>
-          req._id === requestId ? { ...req, status: 'Accepted' } : req
+          req._id === requestId ? { ...req, status: 'Accepted', rentalStartTime: new Date() } : req
         )
       );
       setItems(
@@ -128,6 +164,25 @@ function Dashboard() {
       setSuccess('Request declined');
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to decline request');
+    }
+  };
+
+  const handleReturn = async (requestId) => {
+    try {
+      const res = await api.put(`/requests/${requestId}/return`);
+      setRequests(
+        requests.map((req) =>
+          req._id === requestId ? { ...req, status: 'Completed' } : req
+        )
+      );
+      setItems(
+        items.map((item) =>
+          item._id === res.data.item._id ? { ...item, status: 'Available' } : item
+        )
+      );
+      setSuccess('Item returned successfully');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to return item');
     }
   };
 
@@ -182,7 +237,7 @@ function Dashboard() {
           </div>
           <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
             <div className="flex items-center">
-              <div className="p-3 rounded-full bg-blue-50 text-blue-500">
+              <div className="p-3 rounded-full bg-gray-50 text-gray-500">
                 <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path
                     strokeLinecap="round"
@@ -214,7 +269,9 @@ function Dashboard() {
               </div>
               <div className="ml-4">
                 <p className="text-sm text-gray-500">Completed Exchanges</p>
-                <p className="text-xl font-semibold text-gray-900">0</p>
+                <p className="text-xl font-semibold text-gray-900">
+                  {requests.filter((req) => req.status === 'Completed').length}
+                </p>
               </div>
             </div>
           </div>
@@ -244,7 +301,7 @@ function Dashboard() {
             <button
               className={`flex-1 py-4 px-6 text-center font-medium ${
                 activeTab === 'my-items'
-                  ? 'text-neighborshare-purple border-b-2 border-neighborshare-purple'
+                  ? 'text-neighborshare-purple border-b-2 border-neighborshare nephropathy-purple'
                   : 'text-gray-500 hover:text-purple-700'
               }`}
               onClick={() => setActiveTab('my-items')}
@@ -363,7 +420,7 @@ function Dashboard() {
                         <div>
                           <label
                             htmlFor="hourlyPrice"
-                            className="block text-sm font-medium text premimum text-gray-700 mb-1"
+                            className="block text-sm font-medium text-gray-700 mb-1"
                           >
                             Hourly Price (PKR)
                           </label>
@@ -446,7 +503,7 @@ function Dashboard() {
                       <div className="flex justify-end">
                         <button
                           type="submit"
-                          className="bg-neighborshare-purple text-white py-2 px-4 rounded-lg hover:bg-purple-700 transition-colors"
+                          className="bg-gray-600 text-white py-2 px-4 rounded-lg hover:bg-gray-700 transition-colors"
                         >
                           Add Item
                         </button>
@@ -502,22 +559,37 @@ function Dashboard() {
                         <p className="text-sm text-gray-600">
                           Requested on: {new Date(request.createdAt).toLocaleDateString()}
                         </p>
-                        {request.owner?._id === user._id && request.status === 'Pending' && (
-                          <div className="mt-2 flex space-x-2">
-                            <button
-                              onClick={() => handleAcceptRequest(request._id)}
-                              className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
-                            >
-                              Accept
-                            </button>
-                            <button
-                              onClick={() => handleDeclineRequest(request._id)}
-                              className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
-                            >
-                              Decline
-                            </button>
-                          </div>
+                        {request.status === 'Accepted' && request.requester?._id === user._id && (
+                          <p className="text-sm text-gray-600">
+                            Time Remaining: {timers[request._id] || 'Loading...'}
+                          </p>
                         )}
+                        <div className="mt-2 flex space-x-2">
+                          {request.owner?._id === user._id && request.status === 'Pending' && (
+                            <>
+                              <button
+                                onClick={() => handleAcceptRequest(request._id)}
+                                className="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors"
+                              >
+                                Accept
+                              </button>
+                              <button
+                                onClick={() => handleDeclineRequest(request._id)}
+                                className="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors"
+                              >
+                                Decline
+                              </button>
+                            </>
+                          )}
+                          {request.requester?._id === user._id && request.status === 'Accepted' && (
+                            <button
+                              onClick={() => handleReturn(request._id)}
+                              className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600 transition-colors"
+                            >
+                              Return
+                            </button>
+                          )}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -554,4 +626,4 @@ function Dashboard() {
   );
 }
 
-export default Dashboard;
+export default Dashboard; 

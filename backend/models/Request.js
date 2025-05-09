@@ -30,6 +30,9 @@ const requestSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  rentalStartTime: {
+    type: Date, 
+  },
 });
 
 module.exports = mongoose.model('Request', requestSchema);
